@@ -1,15 +1,18 @@
 import * as React from 'react';
+import { useShallow } from 'zustand/react/shallow';
 
 import type { SxProps } from '@mui/joy/styles/types';
 import { Box, Card, Chip, Divider, Sheet, Typography } from '@mui/joy';
 
 import { RenderCodeMemo } from '~/modules/blocks/code/RenderCode';
 
-import { ChipToggleButton } from '~/common/components/ChipToggleButton';
+import { ExpanderControlledBox } from '~/common/components/ExpanderControlledBox';
+import { objectDeepCloneWithStringLimit } from '~/common/util/objectUtils';
 import TimelapseIcon from '@mui/icons-material/Timelapse';
 
 import type { AixClientDebugger } from './memstore-aix-client-debugger';
 import { AixDebuggerMeasurementsTable } from './AixDebuggerMeasurementsTable';
+import { useAixClientDebuggerStore } from './memstore-aix-client-debugger';
 
 
 const _styles = {
@@ -29,6 +32,16 @@ const _styles = {
     fontSize: 'sm',
     display: 'flex',
     justifyContent: 'space-between',
+  },
+
+  sheetTitleClickable: {
+    px: 1.5,
+    py: 0.75,
+    fontSize: 'sm',
+    display: 'flex',
+    justifyContent: 'space-between',
+    cursor: 'pointer',
+    userSelect: 'none',
   },
 
   requestSheetParticles: {
@@ -69,12 +82,17 @@ export function AixDebuggerFrame(props: {
   frame: AixClientDebugger.Frame;
 }) {
 
-  // state
-  const [showParticles, setShowParticles] = React.useState(false); // hide by default (heavy)
+  // state: section open/close is kept in the debugger store so it persists across frame switches
+  const { showHeaders, showBody, showParticles, toggleOpenState } = useAixClientDebuggerStore(useShallow(state => ({
+    showHeaders: !!state.openStates.headers,
+    showBody: !!state.openStates.body,
+    showParticles: !!state.openStates.particles,
+    toggleOpenState: state.toggleOpenState,
+  })));
 
-  const handleToggleShowParticles = React.useCallback(() => {
-    setShowParticles(on => !on);
-  }, []);
+  const handleToggleShowHeaders = React.useCallback(() => toggleOpenState('headers'), [toggleOpenState]);
+  const handleToggleShowBody = React.useCallback(() => toggleOpenState('body'), [toggleOpenState]);
+  const handleToggleShowParticles = React.useCallback(() => toggleOpenState('particles'), [toggleOpenState]);
 
   const { frame } = props;
 
@@ -110,81 +128,67 @@ export function AixDebuggerFrame(props: {
 
       {/* Headers */}
       <Sheet variant='outlined' color='warning' sx={_styles.requestSheet}>
-        <Typography color='warning' variant='soft' level='title-sm' sx={_styles.sheetTitle}>
+        <Typography color='warning' variant='soft' level='title-sm' sx={_styles.sheetTitleClickable} onClick={handleToggleShowHeaders}>
           <span>-&gt; Headers</span>
+          <Box component='span' typography='body-xs'>{showHeaders ? 'hide' : 'show headers'}</Box>
         </Typography>
-        <Divider />
-        {frame.headers ? (
-          <RenderCodeMemo
-            semiStableId={`aix-dbg-headers-${frame.id}`}
-            title='json'
-            code={frame.headers}
-            isPartial={false}
-            renderHideTitle
-            optimizeLightweight
-          />
-        ) : (
-          <Box sx={_styles.sheetTitle}>No headers data available</Box>
-        )}
+        <ExpanderControlledBox expanded={showHeaders}>
+          <Divider />
+          {frame.headers ? (
+            <RenderCodeMemo
+              semiStableId={`aix-dbg-headers-${frame.id}`}
+              title='json'
+              code={frame.headers}
+              isPartial={false}
+              renderHideTitle
+              optimizeLightweight
+            />
+          ) : (
+            <Box sx={_styles.sheetTitle}>No headers data available</Box>
+          )}
+        </ExpanderControlledBox>
       </Sheet>
 
       {/* Body */}
       <Sheet variant='outlined' color='primary' sx={_styles.requestSheet}>
-        <Typography color='primary' variant='soft' level='title-sm' sx={_styles.sheetTitle}>
+        <Typography color='primary' variant='soft' level='title-sm' sx={_styles.sheetTitleClickable} onClick={handleToggleShowBody}>
           <span>-&gt; Body</span>
           {frame.bodySize > 0 && <span>{frame.bodySize.toLocaleString()} bytes</span>}
         </Typography>
-        <Divider />
-        {frame.body ? (
-          <RenderCodeMemo
-            semiStableId={`aix-dbg-body-${frame.id}`}
-            title='json'
-            code={frame.body}
-            isPartial={false}
-            renderHideTitle
-            optimizeLightweight
-          />
-        ) : (
-          <Box sx={_styles.sheetTitle}>Waiting for transmitted body data...</Box>
-        )}
+        <ExpanderControlledBox expanded={showBody}>
+          <Divider />
+          {frame.body ? (
+            <RenderCodeMemo
+              semiStableId={`aix-dbg-body-${frame.id}`}
+              title='json'
+              code={frame.body}
+              isPartial={false}
+              renderHideTitle
+              optimizeLightweight
+            />
+          ) : (
+            <Box sx={_styles.sheetTitle}>Waiting for transmitted body data...</Box>
+          )}
+        </ExpanderControlledBox>
       </Sheet>
 
-      {/* Performance Profiler */}
-      {!!frame.profilerMeasurements?.length && (
-        <Sheet variant='outlined' color='neutral' sx={_styles.requestSheet}>
-          <Typography level='title-sm' startDecorator={<TimelapseIcon />} sx={{ ..._styles.sheetTitle, justifyContent: undefined }}>
-            Internal Profiler:
-          </Typography>
-          {!!frame.profilerMeasurements?.length ? (
-            <AixDebuggerMeasurementsTable measurements={frame.profilerMeasurements} />
-          ) : (
-            'No profiler measurements available. Note: profiling is not available in production.'
-          )}
-        </Sheet>
-      )}
-
       {/* Particles List */}
-      <Box mb={showParticles ? -2 : undefined} sx={_styles.particleNorminal}>
-        <Typography level='title-sm'>
-          Particles {frame.particles.length > 0 && `(${frame.particles.length})`}
-          {!frame.isComplete && ' • Streaming...'}
+      <Sheet variant='outlined' sx={_styles.requestSheet}>
+        <Typography level='title-sm' variant='soft' color='neutral' sx={_styles.sheetTitleClickable} onClick={handleToggleShowParticles}>
+          <span>&lt;- Particles {!frame.isComplete && ' - In Progress...'}{frame.particles.length > 0 && ` (${frame.particles.length})`}</span>
+          <Box component='span' typography='body-xs'>{showParticles ? 'hide' : 'show particles'}</Box>
         </Typography>
-        <ChipToggleButton text='show particles' active={showParticles} onClick={handleToggleShowParticles} />
-      </Box>
-      {showParticles && (
-        <Sheet variant='outlined' color='neutral' sx={_styles.requestSheetParticles}>
+        {showParticles && <Sheet variant='plain' sx={_styles.requestSheetParticles}>
           {/* Zero state */}
           {!frame.particles.length && <div>No particles received yet</div>}
 
           {/* List of particles */}
           {frame.particles.map((particle, idx) => {
 
-            // truncated preview of particle content
+            // preview of particle content: preserve structure, trim long string fields
             let jsonPreview = '';
             try {
-              const content = particle.content;
-              jsonPreview = JSON.stringify(content).substring(0, 1024);
-              if (jsonPreview.length >= 1024) jsonPreview += '...';
+              jsonPreview = JSON.stringify(objectDeepCloneWithStringLimit(particle.content, 'aix-debugger-particle', 64));
             } catch (e) {
               jsonPreview = 'Error parsing content';
             }
@@ -200,6 +204,20 @@ export function AixDebuggerFrame(props: {
               </Box>
             );
           })}
+        </Sheet>}
+      </Sheet>
+
+      {/* Performance Profiler */}
+      {!!frame.profilerMeasurements?.length && (
+        <Sheet variant='outlined' color='neutral' sx={_styles.requestSheet}>
+          <Typography level='title-sm' startDecorator={<TimelapseIcon />} sx={{ ..._styles.sheetTitle, justifyContent: undefined }}>
+            Internal Profiler:
+          </Typography>
+          {!!frame.profilerMeasurements?.length ? (
+            <AixDebuggerMeasurementsTable measurements={frame.profilerMeasurements} />
+          ) : (
+            'No profiler measurements available. Note: profiling is not available in production.'
+          )}
         </Sheet>
       )}
     </Box>
