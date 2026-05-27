@@ -39,16 +39,38 @@ const orModelFamilyOrder = [
 ] as const;
 
 const orOldModelIDs = [
-  // Older OpenAI models
-  'openai/gpt-3.5-turbo-0301', 'openai/gpt-3.5-turbo-0613', 'openai/gpt-4-0314', 'openai/gpt-4-32k-0314',
+  // Older OpenAI families - hide everything superseded by GPT-5.4/5.5.
+  // Kept visible: gpt-5.5*, gpt-5.4*, gpt-audio*, gpt-oss-*, gpt-chat-latest, gpt-5.1-codex-max (newest codex).
+  // NOTE: startsWith matching - so 'openai/gpt-4-' matches gpt-4-turbo etc., and 'openai/gpt-5-' matches gpt-5-pro etc.
+  //       The exact bases 'openai/gpt-4', 'openai/gpt-5', 'openai/gpt-5.1', 'openai/gpt-5.2', 'openai/gpt-5.3'
+  //       are handled by orOldExactIDs below (because startsWith would over-match e.g. 'gpt-5.5').
+  'openai/gpt-3.5',                                    // all GPT-3.5*
+  'openai/gpt-4-', 'openai/gpt-4o', 'openai/gpt-4.1',  // GPT-4, GPT-4o, GPT-4.1 families
+  'openai/gpt-5-',                                     // GPT-5 family (gpt-5-pro, gpt-5-mini, gpt-5-nano, gpt-5-codex, gpt-5-chat, gpt-5-image*)
+  'openai/gpt-5.1-', 'openai/gpt-5.2-', 'openai/gpt-5.3-', // GPT-5.1/5.2/5.3 families (variants)
+  'openai/o1', 'openai/o3', 'openai/o4',               // o-series reasoning (superseded by GPT-5 thinking)
   // Older Anthropic models
   'anthropic/claude-1', 'anthropic/claude-1.2', 'anthropic/claude-instant-1.0', 'anthropic/claude-instant-1.1',
   'anthropic/claude-2', 'anthropic/claude-2:beta', 'anthropic/claude-2.0', 'anthropic/claude-2.1', 'anthropic/claude-2.0:beta',
   // Older Google models
   'google/palm-2-',
+  'google/gemma-2-', // superseded by Gemma 3 and 4
+  'google/gemma-3-', // superseded by Gemma 4 (gemma-3n is a separate on-device class, not caught by this prefix)
   // Older Meta models
   'meta-llama/llama-3-', 'meta-llama/llama-2-',
+  // Older Mistral models
+  'mistralai/mistral-7b-instruct-v0.1',
 ] as const;
+
+// Exact-match hides: used when a startsWith prefix would over-match newer versions.
+// e.g. 'openai/gpt-5' as a prefix would also hide 'openai/gpt-5.5', so we list it here for exact match.
+const orOldExactIDs = new Set<string>([
+  'openai/gpt-4',
+  'openai/gpt-5',
+  'openai/gpt-5.1',
+  'openai/gpt-5.2',
+  'openai/gpt-5.3',
+]);
 
 // [OpenRouter] Prefix for "stable latest" alias models (e.g. ~anthropic/claude-opus-latest).
 // These are promoted to visible first-class entries because they answer "which one do I pick".
@@ -287,9 +309,12 @@ export function openRouterModelToModelDescription(wireModel: object): ModelDescr
 
   // -- Hidden --
 
-  // hidden: hide by default older models or models not in known families; match with startsWith for both orOldModelIDs and orModelFamilyOrder.
-  // Latest aliases (~vendor/...) are NEVER auto-hidden by the "unknown family" rule, since they are stable shortcuts we want surfaced.
+  // hidden: hide by default older models or models not in known families.
+  // - orOldModelIDs: prefix match (startsWith) for whole families
+  // - orOldExactIDs: exact match for bases where prefix would over-match newer versions (e.g. 'gpt-5' vs 'gpt-5.5')
+  // - Latest aliases (~vendor/...) are NEVER auto-hidden by the "unknown family" rule, since they are stable shortcuts we want surfaced.
   const hidden = orOldModelIDs.some(prefix => model.id.startsWith(prefix))
+    || orOldExactIDs.has(model.id)
     || (!isLatestAlias && !orModelFamilyOrder.some(prefix => idForFamilyChecks.startsWith(prefix)));
 
 
@@ -355,6 +380,51 @@ export function openRouterInjectVariants(models: ModelDescriptionSchema[], model
 
   // default
   models.push(model);
+  return models;
+}
+
+
+/**
+ * Reduce a model id to its canonical form by stripping common variant suffixes:
+ * - trailing ISO-like dates: '-2024-08-06'
+ * - trailing 4-digit version stamps: '-1106', '-0314'
+ * - '-preview' or '-preview-MM-DD'
+ *
+ * Used by openRouterPostProcess to detect when a dated/preview/free model has a
+ * stable sibling that is also visible, and therefore can be hidden by default.
+ */
+function _canonicalize(id: string): string {
+  return id
+    .replace(/-\d{4}-\d{2}-\d{2}$/, '')   // -2024-08-06
+    .replace(/-\d{4}$/, '')               // -1106, -0314
+    .replace(/-preview(-\d{2}-\d{2})?$/, '');
+}
+
+/**
+ * Sibling-aware suppression pass for OpenRouter models.
+ * Hides :free duplicates and dated/preview snapshots when a canonical sibling is visible.
+ * Runs after openRouterInjectVariants so Anthropic ::thinking entries are preserved
+ * (their idVariant lives in a separate field, not in the canonical id).
+ */
+export function openRouterPostProcess(models: ModelDescriptionSchema[]): ModelDescriptionSchema[] {
+  // build a set of canonical ids that are currently visible
+  const visibleCanonicalIds = new Set(
+    models.filter(m => !m.hidden).map(m => _canonicalize(m.id)),
+  );
+  for (const m of models) {
+    if (m.hidden) continue;
+
+    // :free with a paid sibling -> hide
+    if (m.id.endsWith(':free')) {
+      const paidId = m.id.slice(0, -':free'.length);
+      if (visibleCanonicalIds.has(paidId)) m.hidden = true;
+      continue;
+    }
+
+    // dated snapshot or preview with a stable sibling -> hide
+    const canon = _canonicalize(m.id);
+    if (canon !== m.id && visibleCanonicalIds.has(canon)) m.hidden = true;
+  }
   return models;
 }
 

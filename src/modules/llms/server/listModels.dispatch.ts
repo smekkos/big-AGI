@@ -48,7 +48,7 @@ import { lmStudioFetchModels, lmStudioModelsToModelDescriptions } from './openai
 import { localAIModelSortFn, localAIModelToModelDescription } from './openai/models/localai.models';
 import { mistralModels } from './openai/models/mistral.models';
 import { moonshotModelFilter, moonshotModelSortFn, moonshotModelToModelDescription } from './openai/models/moonshot.models';
-import { openRouterInjectVariants, openRouterModelFamilySortFn, openRouterModelToModelDescription } from './openai/models/openrouter.models';
+import { openRouterInjectVariants, openRouterModelFamilySortFn, openRouterModelToModelDescription, openRouterPostProcess } from './openai/models/openrouter.models';
 import { openAIInjectVariants, openAIModelFilter, openAIModelToModelDescription, openAISortModels, openaiValidateModelDefs_DEV } from './openai/models/openai.models';
 import { perplexityHardcodedModelDescriptions, perplexityInjectVariants } from './openai/models/perplexity.models';
 import { tlusApiHeuristic, tlusApiTryParse } from './openai/models/tlusapi.models';
@@ -521,11 +521,11 @@ function _listModelsCreateDispatch(access: AixAPI_Access, signal?: AbortSignal):
 
             case 'openrouter':
               // openRouterStatTokenizers(maybeModels);
-              return maybeModels
+              return openRouterPostProcess(maybeModels
                 .sort(openRouterModelFamilySortFn)
                 .map(openRouterModelToModelDescription)
                 .filter(desc => !!desc)
-                .reduce(openRouterInjectVariants, []);
+                .reduce(openRouterInjectVariants, []));
 
             default:
               const _exhaustiveCheck: never = dialect;
