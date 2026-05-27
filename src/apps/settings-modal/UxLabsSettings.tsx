@@ -1,6 +1,7 @@
 import * as React from 'react';
 
 import { FormControl, Typography } from '@mui/joy';
+import CachedIcon from '@mui/icons-material/Cached';
 import CodeIcon from '@mui/icons-material/Code';
 import EditNoteIcon from '@mui/icons-material/EditNote';
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
@@ -26,6 +27,7 @@ export function UxLabsSettings() {
     labsShowShortcutBar, setLabsShowShortcutBar,
     labsComposerAttachmentsInline, setLabsComposerAttachmentsInline,
     labsSingleDollarLatex, setLabsSingleDollarLatex,
+    labsAutoRefreshOpenRouter, setLabsAutoRefreshOpenRouter,
   } = useUXLabsStore();
 
   return <>
@@ -76,6 +78,16 @@ export function UxLabsSettings() {
     <FormSwitchControl
       title={<><EditNoteIcon sx={{ fontSize: 'lg', mr: 0.5, mb: 0.25 }} />Auto-hide input</>} description={labsAutoHideComposer ? 'Hover to show' : 'Always visible'}
       checked={labsAutoHideComposer} onChange={setLabsAutoHideComposer}
+    />
+
+    <FormSwitchControl
+      title={<><CachedIcon sx={{ fontSize: 'lg', mr: 0.5, mb: 0.25 }} />OpenRouter Auto-Refresh</>} description={labsAutoRefreshOpenRouter ? 'Every 24h' : 'Manual only'}
+      tooltip={<>
+        Periodically refresh the list of OpenRouter models in the background (once every 24h, at app start).
+        <hr />
+        Disable to keep your current list fixed until you press Refresh in the Models modal.
+      </>}
+      checked={labsAutoRefreshOpenRouter} onChange={setLabsAutoRefreshOpenRouter}
     />
 
     {/*

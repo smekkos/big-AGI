@@ -28,6 +28,9 @@ interface UXLabsStore {
   labsSingleDollarLatex: boolean;
   setLabsSingleDollarLatex: (labsSingleDollarLatex: boolean) => void;
 
+  labsAutoRefreshOpenRouter: boolean;
+  setLabsAutoRefreshOpenRouter: (labsAutoRefreshOpenRouter: boolean) => void;
+
 }
 
 export const useUXLabsStore = create<UXLabsStore>()(
@@ -52,13 +55,24 @@ export const useUXLabsStore = create<UXLabsStore>()(
       labsSingleDollarLatex: false,
       setLabsSingleDollarLatex: (labsSingleDollarLatex: boolean) => set({ labsSingleDollarLatex }),
 
+      labsAutoRefreshOpenRouter: true,
+      setLabsAutoRefreshOpenRouter: (labsAutoRefreshOpenRouter: boolean) => set({ labsAutoRefreshOpenRouter }),
+
     }),
     {
       name: 'app-ux-labs',
 
       // Migrations:
       // - 1: turn on the screen capture by default (subsequently removed)
-      version: 1,
+      // - 2: introduce labsAutoRefreshOpenRouter, default true (opt-out for existing users)
+      version: 2,
+
+      migrate: (persistedState: any, fromVersion: number): any => {
+        const state = { ...(persistedState ?? {}) };
+        if (fromVersion < 2 && typeof state.labsAutoRefreshOpenRouter !== 'boolean')
+          state.labsAutoRefreshOpenRouter = true;
+        return state;
+      },
 
     },
   ),
@@ -70,4 +84,8 @@ export function getLabsHighPerformance() {
 
 export function getLabsLosslessImages() {
   return useUXLabsStore.getState().labsLosslessImages;
+}
+
+export function getLabsAutoRefreshOpenRouter() {
+  return useUXLabsStore.getState().labsAutoRefreshOpenRouter;
 }

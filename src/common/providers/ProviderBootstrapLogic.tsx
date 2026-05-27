@@ -5,6 +5,7 @@ import { getChatTokenCountingMethod } from '../../apps/chat/store-app-chat';
 
 import { logger } from '~/common/logger/logger.client';
 import { markNewsAsSeen, shallRedirectToNews, sherpaReconfigureBackendModels, sherpaStorageMaintenanceNoChats_delayed } from '~/common/logic/store-logic-sherpa';
+import { maybeRefreshOpenRouterModels } from '~/modules/llms/vendors/openrouter/openrouter.refresh';
 import { navigateToNews, ROUTE_APP_CHAT } from '~/common/app.routes';
 import { preloadTiktokenLibrary } from '~/common/tokens/tokens.text';
 import { useClientLoggerInterception } from '~/common/logger/hooks/useClientLoggerInterception';
@@ -63,7 +64,10 @@ export function ProviderBootstrapLogic(props: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!launchAutoConf) return;
 
-    void sherpaReconfigureBackendModels(); // fire/forget (background server-driven model reconfiguration)
+    // fire/forget (background server-driven model reconfiguration)
+    // then opportunistically refresh the OpenRouter model list if the 24h TTL has elapsed
+    void sherpaReconfigureBackendModels()
+      .then(() => maybeRefreshOpenRouterModels());
 
   }, [launchAutoConf]);
 
