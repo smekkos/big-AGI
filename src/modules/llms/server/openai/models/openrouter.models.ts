@@ -50,14 +50,28 @@ const orOldModelIDs = [
   'meta-llama/llama-3-', 'meta-llama/llama-2-',
 ] as const;
 
+// [OpenRouter] Prefix for "stable latest" alias models (e.g. ~anthropic/claude-opus-latest).
+// These are promoted to visible first-class entries because they answer "which one do I pick".
+const orLatestAliasPrefix = '~' as const;
+
 
 export function openRouterModelFamilySortFn(a: { id: string }, b: { id: string }): number {
-  const aPrefixIndex = orModelFamilyOrder.findIndex(prefix => a.id.startsWith(prefix));
-  const bPrefixIndex = orModelFamilyOrder.findIndex(prefix => b.id.startsWith(prefix));
+  // Strip the latest-alias prefix for prefix lookup so '~anthropic/...' groups with 'anthropic/...'
+  const aIsAlias = a.id.startsWith(orLatestAliasPrefix);
+  const bIsAlias = b.id.startsWith(orLatestAliasPrefix);
+  const aBase = aIsAlias ? a.id.slice(orLatestAliasPrefix.length) : a.id;
+  const bBase = bIsAlias ? b.id.slice(orLatestAliasPrefix.length) : b.id;
 
-  // If both have a prefix, sort by prefix first, and then alphabetically
-  if (aPrefixIndex !== -1 && bPrefixIndex !== -1)
-    return aPrefixIndex !== bPrefixIndex ? aPrefixIndex - bPrefixIndex : b.id.localeCompare(a.id);
+  const aPrefixIndex = orModelFamilyOrder.findIndex(prefix => aBase.startsWith(prefix));
+  const bPrefixIndex = orModelFamilyOrder.findIndex(prefix => bBase.startsWith(prefix));
+
+  // If both have a prefix, sort by prefix first; within the same prefix, aliases come first,
+  // then fall back to alphabetical (reversed for date-like recency)
+  if (aPrefixIndex !== -1 && bPrefixIndex !== -1) {
+    if (aPrefixIndex !== bPrefixIndex) return aPrefixIndex - bPrefixIndex;
+    if (aIsAlias !== bIsAlias) return aIsAlias ? -1 : 1;
+    return bBase.localeCompare(aBase);
+  }
 
   // If one has a prefix and the other doesn't, prioritize the one with prefix
   return aPrefixIndex !== -1 ? -1 : 1;
@@ -73,9 +87,18 @@ export function openRouterModelToModelDescription(wireModel: object): ModelDescr
   }
 
 
+  // -- Latest Alias --
+  // OpenRouter ships '~vendor/model-latest' entries that are stable aliases tracking the latest version.
+  // We promote these as visible first-class entries (they answer "which one do I pick").
+  const isLatestAlias = model.id.startsWith(orLatestAliasPrefix);
+  const idForFamilyChecks = isLatestAlias ? model.id.slice(orLatestAliasPrefix.length) : model.id;
+
+
   // -- Label --
 
   let label = model.name || model.id.replace('/', ' · ');
+  if (isLatestAlias && !label.toLowerCase().includes('latest'))
+    label += ' · latest';
 
 
   // -- Pricing --
@@ -264,9 +287,17 @@ export function openRouterModelToModelDescription(wireModel: object): ModelDescr
 
   // -- Hidden --
 
-  // hidden: hide by default older models or models not in known families; match with startsWith for both orOldModelIDs and orModelFamilyOrder
+  // hidden: hide by default older models or models not in known families; match with startsWith for both orOldModelIDs and orModelFamilyOrder.
+  // Latest aliases (~vendor/...) are NEVER auto-hidden by the "unknown family" rule, since they are stable shortcuts we want surfaced.
   const hidden = orOldModelIDs.some(prefix => model.id.startsWith(prefix))
-    || !orModelFamilyOrder.some(prefix => model.id.startsWith(prefix));
+    || (!isLatestAlias && !orModelFamilyOrder.some(prefix => idForFamilyChecks.startsWith(prefix)));
+
+
+  // -- Description --
+
+  let description = model.description?.length > 280 ? model.description.slice(0, 277) + '...' : model.description;
+  if (isLatestAlias)
+    description = `Stable alias - tracks the latest version. ${description ?? ''}`.trim();
 
 
   return fromManualMapping([], model.id, model?.created, undefined, {
@@ -274,7 +305,7 @@ export function openRouterModelToModelDescription(wireModel: object): ModelDescr
     // latest: ...
     label,
     ...(pubDate !== undefined && { pubDate }),
-    description: model.description?.length > 280 ? model.description.slice(0, 277) + '...' : model.description,
+    description,
     contextWindow,
     maxCompletionTokens,
     interfaces,
