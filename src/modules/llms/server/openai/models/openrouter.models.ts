@@ -4,7 +4,7 @@ import { LLM_IF_OAI_Chat, LLM_IF_OAI_Fn, LLM_IF_OAI_Json, LLM_IF_OAI_PromptCachi
 import { Release } from '~/common/app.release';
 
 import type { ModelDescriptionSchema, OrtVendorLookupResult } from '../../llm.server.types';
-import { fromManualMapping } from '../../models.mappings';
+import { formatPubDate, fromManualMapping } from '../../models.mappings';
 import { llmOrtAntLookup_ThinkingVariants } from '../../anthropic/anthropic.models';
 import { llmOrtGemLookup } from '../../gemini/gemini.models';
 import { llmOrtOaiLookup } from './openai.models';
@@ -21,6 +21,7 @@ const FIXUP_MAX_OUTPUT = true;
 // - models list API: https://openrouter.ai/docs/models
 
 
+// NOTE: this list doubles as the visibility allow-list - any model whose family prefix is NOT here is hidden by default (see `hidden` below).
 const orModelFamilyOrder = [
   // Leading models/organizations (based on capabilities and popularity)
   'anthropic/', 'deepseek/', 'google/', 'openai/', 'x-ai/',
@@ -29,13 +30,11 @@ const orModelFamilyOrder = [
   // Other major providers
   'mistralai/', 'meta-llama/', 'amazon/', 'cohere/',
   // Specialized/AI companies
-  'perplexity/', 'inflection/',
-  // Chinese majors (now surfaced on OpenRouter directly)
-  'alibaba/', 'minimax/', 'bytedance/', 'bytedance-seed/', 'tencent/', 'baidu/', 'stepfun/',
+  'perplexity/', 'inflection/', 'inclusionai/', 'arcee-ai/',
+  // Chinese majors (surfaced on OpenRouter directly)
+  'minimax/', 'bytedance/', 'bytedance-seed/', 'tencent/', 'baidu/', 'stepfun/',
   // Research/open models
-  'nvidia/', 'microsoft/', 'nousresearch/', 'openchat/', // 'huggingfaceh4/',
-  // Community/other providers
-  // 'gryphe/', 'thedrummer/', 'undi95/', 'cognitivecomputations/', 'sao10k/',
+  'nvidia/', 'microsoft/', 'nousresearch/', 'ibm-granite/', 'poolside/', 'xiaomi/',
 ] as const;
 
 const orOldModelIDs = [
@@ -50,13 +49,12 @@ const orOldModelIDs = [
   'openai/gpt-5.1-', 'openai/gpt-5.2-', 'openai/gpt-5.3-', // GPT-5.1/5.2/5.3 families (variants)
   'openai/o1', 'openai/o3', 'openai/o4',               // o-series reasoning (superseded by GPT-5 thinking)
   // Older Anthropic models
-  'anthropic/claude-1', 'anthropic/claude-1.2', 'anthropic/claude-instant-1.0', 'anthropic/claude-instant-1.1',
-  'anthropic/claude-2', 'anthropic/claude-2:beta', 'anthropic/claude-2.0', 'anthropic/claude-2.1', 'anthropic/claude-2.0:beta',
+  'anthropic/claude-1', 'anthropic/claude-2', 'anthropic/claude-instant-',
   // Older Google models
   'google/palm-2-',
   'google/gemma-2-', // superseded by Gemma 3 and 4
   'google/gemma-3-', // superseded by Gemma 4 (gemma-3n is a separate on-device class, not caught by this prefix)
-  // Older Meta models
+  // Older Meta models (Llama 2 and Llama 3.0; keeps 3.1/3.2/3.3/4 visible)
   'meta-llama/llama-3-', 'meta-llama/llama-2-',
   // Older Mistral models
   'mistralai/mistral-7b-instruct-v0.1',
@@ -77,7 +75,7 @@ const orOldExactIDs = new Set<string>([
 const orLatestAliasPrefix = '~' as const;
 
 
-export function openRouterModelFamilySortFn(a: { id: string }, b: { id: string }): number {
+export function openRouterModelFamilySortFn(a: { id: string, created?: number }, b: { id: string, created?: number }): number {
   // Strip the latest-alias prefix for prefix lookup so '~anthropic/...' groups with 'anthropic/...'
   const aIsAlias = a.id.startsWith(orLatestAliasPrefix);
   const bIsAlias = b.id.startsWith(orLatestAliasPrefix);
@@ -88,10 +86,17 @@ export function openRouterModelFamilySortFn(a: { id: string }, b: { id: string }
   const bPrefixIndex = orModelFamilyOrder.findIndex(prefix => bBase.startsWith(prefix));
 
   // If both have a prefix, sort by prefix first; within the same prefix, aliases come first,
-  // then fall back to alphabetical (reversed for date-like recency)
+  // then newest-first by OpenRouter 'created' timestamp, then fall back to alphabetical.
   if (aPrefixIndex !== -1 && bPrefixIndex !== -1) {
     if (aPrefixIndex !== bPrefixIndex) return aPrefixIndex - bPrefixIndex;
     if (aIsAlias !== bIsAlias) return aIsAlias ? -1 : 1;
+    // ...then within the same family, newest-first by OpenRouter 'created' timestamp.
+    // Reverse-alphabetical id sorting got this wrong: the tier name dominated, so 'sonnet'/'opus'
+    // outranked 'fable' and the latest flagship (e.g. claude-fable-5) sank below older tiers.
+    // By release date this yields fable-5, then opus 4.8 > 4.7 > 4.6 > 4.5, etc.
+    if ((a.created ?? 0) !== (b.created ?? 0))
+      return (b.created ?? 0) - (a.created ?? 0);
+    // stable final tiebreaker for same-day releases (e.g. base vs '-fast' variants)
     return bBase.localeCompare(aBase);
   }
 
@@ -219,7 +224,7 @@ export function openRouterModelToModelDescription(wireModel: object): ModelDescr
     if (lookup?.parameterSpecs)
       for (const param of lookup.parameterSpecs)
         if (!parameterSpecs.some(p => p.paramId === param.paramId))
-          parameterSpecs.push(...lookup.parameterSpecs);
+          parameterSpecs.push(param);
     if (lookup?.initialTemperature !== undefined)
       initialTemperature = lookup.initialTemperature;
   };
@@ -234,14 +239,19 @@ export function openRouterModelToModelDescription(wireModel: object): ModelDescr
       const antLookup = llmOrtAntLookup_ThinkingVariants(llmRef);
       _mergeLookup(antLookup);
 
-      if (DEV_DEBUG_OPENROUTER_MODELS && !antLookup && ['anthropic/claude-3.5-sonnet'].every(silence => !model.id.startsWith(silence)))
+      if (DEV_DEBUG_OPENROUTER_MODELS && !antLookup)
         console.log('[DEV] openRouterModelToModelDescription: unknown Anthropic model:', model.id);
 
-      // 0-day: non-indexed models only - indexed ones use native definitions via llmOrtAntLookup.
+      // 0-day: unknown models only - indexed ones use native definitions via llmOrtAntLookup.
       // OR sweep shows effort on all Anthropic models because OR translates reasoning_effort internally;
       // the native API only supports effort on select models - trust the manual definitions for those.
-      if (interfaces.includes(LLM_IF_OAI_Reasoning) && !parameterSpecs.some(p => p.paramId === 'llmVndAntThinkingBudget')) {
-        DEV_DEBUG_OPENROUTER_MODELS && console.log(`[DEV] openRouterModelToModelDescription: unexpected ${antLookup ? 'KNOWN' : 'unknown'} Anthropic reasoning model:`, model.id);
+
+      // NOTE: Fable/Mythos 5+ use always-on adaptive thinking (no budget param). The guard `!antLookup`
+      // ensures we only inject the thinking budget for genuinely unknown models, not indexed ones that
+      // intentionally omit it.
+      const isAntUnknown = !antLookup;
+      if (isAntUnknown && interfaces.includes(LLM_IF_OAI_Reasoning) && !parameterSpecs.some(p => p.paramId === 'llmVndAntThinkingBudget')) {
+        DEV_DEBUG_OPENROUTER_MODELS && console.log('[DEV] openRouterModelToModelDescription: unknown Anthropic reasoning model:', model.id);
         parameterSpecs.push({ paramId: 'llmVndAntThinkingBudget' }); // configurable thinking budget
         if (!parameterSpecs.some(p => p.paramId === 'llmVndAntEffort'))
           parameterSpecs.push({ paramId: 'llmVndAntEffort', enumValues: ['low', 'medium', 'high', 'xhigh', 'max'] }); // tunneled via OpenRouter's `verbosity` field
@@ -302,7 +312,20 @@ export function openRouterModelToModelDescription(wireModel: object): ModelDescr
       break;
 
     default:
-      // in the default case, we let it be
+      // 0-day: generic reasoning models with no upstream-specific vendor mapping get the shared
+      // on/off/Default thinking toggle (llmVndMiscEffort). OpenRouter's unified reasoning API (2025-11-11)
+      // translates it via the OAI-compatible branch in openai.chatCompletions.ts to `reasoning: { enabled }`:
+      // 'high' -> enabled:true, 'none' -> enabled:false, unset ('Default') -> no field (model default).
+      // We pin enumValues to ['none', 'high'] (binary on/off, no effort levels) since generic models may
+      // not honor effort granularity. Guard: only when the model advertises reasoning AND no equivalent
+      // reasoning control is already present (so we never double up or override a vendor-specific one).
+      if (interfaces.includes(LLM_IF_OAI_Reasoning) && !parameterSpecs.some(p =>
+        p.paramId === 'llmVndMiscEffort'
+        || p.paramId === 'llmVndAntEffort' || p.paramId === 'llmVndAntThinkingBudget'
+        || p.paramId === 'llmVndGemEffort' || p.paramId === 'llmVndGeminiThinkingBudget'
+        || p.paramId === 'llmVndOaiEffort',
+      ))
+        parameterSpecs.push({ paramId: 'llmVndMiscEffort', enumValues: ['none', 'high'] });
       break;
   }
 
@@ -323,6 +346,16 @@ export function openRouterModelToModelDescription(wireModel: object): ModelDescr
   let description = model.description?.length > 280 ? model.description.slice(0, 277) + '...' : model.description;
   if (isLatestAlias)
     description = `Stable alias - tracks the latest version. ${description ?? ''}`.trim();
+
+
+  // -- pubDate fallback --
+
+  // When no editorial vendor pubDate was inherited (generic / 0-day / unmapped OR models), derive a
+  // day-precision pubDate from OpenRouter's 'created' (catalog/release timestamp) so the "new" badge and
+  // newest-model surfaces light up for OR models too. An inherited vendor pubDate always wins (more
+  // authoritative than OR's index date), and stale models fall outside the recency window automatically.
+  if (pubDate === undefined && model.created)
+    pubDate = formatPubDate(model.created);
 
 
   return fromManualMapping([], model.id, model?.created, undefined, {

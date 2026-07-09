@@ -6,7 +6,7 @@ import { Release } from '~/common/app.release';
 
 import type { ModelDescriptionSchema, OrtVendorLookupResult } from '../../llm.server.types';
 import { createVariantInjector, ModelVariantMap } from '../../llm.server.variants';
-import { llmsDefineManualMappings, fromManualMapping, KnownModel, llmDevCheckModels_DEV } from '../../models.mappings';
+import { type KnownLink, type KnownModel, formatPubDate, fromManualMapping, llmDevCheckModels_DEV, llmsDefineModels } from '../../models.mappings';
 
 // --- OpenAI Model ID inference (auto-derived from _knownOpenAIChatModels) ---
 export type LlmsOpenAIModelId = typeof _knownOpenAIChatModels[number]['idPrefix'];
@@ -106,7 +106,82 @@ const PS_DEEP_RESEARCH = [{ paramId: 'llmVndOaiWebSearchContext' as const, initi
 // [OpenAI] Known Chat Models
 // https://platform.openai.com/docs/models
 // https://platform.openai.com/docs/pricing
-export const _knownOpenAIChatModels = llmsDefineManualMappings([
+// pubDate is REQUIRED on every real model entry (same pattern as _ZaiModelDef in zai.models.ts).
+type _OpenAIModelDef = (KnownModel & { pubDate: string }) | KnownLink;
+
+export const _knownOpenAIChatModels = llmsDefineModels<_OpenAIModelDef>()([
+
+  /// GPT-5.6 series - Limited preview June 26, 2026
+  // New naming: the number is the generation; Sol/Terra/Luna are durable capability tiers (intelligence/balance/cost).
+  // Limited preview to a small set of govt-approved partners; not yet on the public /v1/models API, so model IDs use the
+  // stable tier pointers (OpenAI: tiers "advance on their own cadence"). contextWindow/maxCompletionTokens are assumed at
+  // 5.5-class pending API/docs confirmation; pricing is verified from the official announcement.
+  // NOTE: 5.6 Sol introduces new `max` and `ultra` reasoning-effort modes (ultra = subagent acceleration) not yet in the
+  //       llmVndOaiEffort registry - using the supported subset for now; max/ultra need separate param-system support.
+
+  // GPT-5.6 Sol - flagship
+  {
+    idPrefix: 'gpt-5.6-sol',
+    label: 'GPT-5.6 Sol',
+    pubDate: '20260626',
+    description: 'Flagship next-generation model (limited preview). Strongest yet for agentic coding, science, and cybersecurity, with the most robust safety stack to date.',
+    contextWindow: 1050000, // assumed (5.5-class); unverified - not yet on public API
+    maxCompletionTokens: 128000, // assumed; unverified
+    interfaces: [LLM_IF_OAI_Responses, ...IFS_CHAT_CACHE_REASON, LLM_IF_HOTFIX_NoTemperature],
+    parameterSpecs: [
+      { paramId: 'llmVndOaiEffort', enumValues: ['none', 'low', 'medium', 'high', 'xhigh'], initialValue: 'medium' }, // TODO: add 'max'/'ultra' once supported in llmVndOaiEffort
+      { paramId: 'llmVndOaiWebSearchContext' },
+      { paramId: 'llmVndOaiVerbosity' },
+      { paramId: 'llmVndOaiImageGeneration' },
+      { paramId: 'llmVndOaiCodeInterpreter' },
+      { paramId: 'llmForceNoStream' },
+    ],
+    chatPrice: { input: 5, cache: { cType: 'oai-ac', read: 0.5 }, output: 30 }, // cache read = 90% discount
+    // benchmark: TBD (limited preview, not yet on leaderboards)
+  },
+
+  // GPT-5.6 Terra - balanced
+  {
+    idPrefix: 'gpt-5.6-terra',
+    label: 'GPT-5.6 Terra',
+    pubDate: '20260626',
+    description: 'Balanced model for efficient, high-volume everyday work (limited preview). Competitive with GPT-5.5 while being 2x cheaper.',
+    contextWindow: 1050000, // assumed (5.5-class); unverified - not yet on public API
+    maxCompletionTokens: 128000, // assumed; unverified
+    interfaces: [LLM_IF_OAI_Responses, ...IFS_CHAT_CACHE_REASON, LLM_IF_HOTFIX_NoTemperature],
+    parameterSpecs: [
+      { paramId: 'llmVndOaiEffort', enumValues: ['none', 'low', 'medium', 'high', 'xhigh'], initialValue: 'medium' },
+      { paramId: 'llmVndOaiWebSearchContext' },
+      { paramId: 'llmVndOaiVerbosity' },
+      { paramId: 'llmVndOaiImageGeneration' },
+      { paramId: 'llmVndOaiCodeInterpreter' },
+      { paramId: 'llmForceNoStream' },
+    ],
+    chatPrice: { input: 2.5, cache: { cType: 'oai-ac', read: 0.25 }, output: 15 }, // cache read = 90% discount
+    // benchmark: TBD (limited preview, not yet on leaderboards)
+  },
+
+  // GPT-5.6 Luna - fast & affordable
+  {
+    idPrefix: 'gpt-5.6-luna',
+    label: 'GPT-5.6 Luna',
+    pubDate: '20260626',
+    description: 'Fastest, most affordable GPT-5.6 model for high-volume work (limited preview). Strong capability at the lowest cost in the family.',
+    contextWindow: 400000, // assumed (fast-tier class); unverified - not yet on public API
+    maxCompletionTokens: 128000, // assumed; unverified
+    interfaces: [LLM_IF_OAI_Responses, ...IFS_CHAT_CACHE_REASON, LLM_IF_HOTFIX_NoTemperature],
+    parameterSpecs: [
+      { paramId: 'llmVndOaiEffort', enumValues: ['none', 'low', 'medium', 'high', 'xhigh'], initialValue: 'medium' },
+      { paramId: 'llmVndOaiWebSearchContext' },
+      { paramId: 'llmVndOaiVerbosity' },
+      { paramId: 'llmVndOaiImageGeneration' },
+      { paramId: 'llmVndOaiCodeInterpreter' },
+      { paramId: 'llmForceNoStream' },
+    ],
+    chatPrice: { input: 1, cache: { cType: 'oai-ac', read: 0.1 }, output: 6 }, // cache read = 90% discount
+    // benchmark: TBD (limited preview, not yet on leaderboards)
+  },
+
 
   /// GPT-5.5 series - Released April 23, 2026
 
@@ -680,27 +755,7 @@ export const _knownOpenAIChatModels = llmsDefineManualMappings([
   // osb-120b: removed, no longer returned by API (was speculative)
 
 
-  /// [OpenAI, 2025-03-11] NEW `v1/responses` API MODELS - UNSUPPORTED YET
-
-  // Computer Use Preview - INTERNAL MODEL FOR AGENTS - UNSUPPORTED YET
-  {
-    hidden: true, // UNSUPPORTED YET
-    idPrefix: 'computer-use-preview-2025-03-11',
-    label: 'Computer Use Preview [Deprecated]',
-    pubDate: '20250311',
-    isLegacy: true,
-    description: '[Use: GPT-5.4 Mini - Shut down: 2026-07-23] Specialized model for computer use tool. Optimized for computer interaction capabilities.',
-    contextWindow: 8192,
-    maxCompletionTokens: 1024,
-    interfaces: [LLM_IF_OAI_Responses, LLM_IF_OAI_Chat, LLM_IF_OAI_Fn, LLM_IF_HOTFIX_NoTemperature],
-    chatPrice: { input: 3, output: 12 },
-    isPreview: true,
-  },
-  {
-    idPrefix: 'computer-use-preview',
-    label: 'Computer Use Preview',
-    symLink: 'computer-use-preview-2025-03-11',
-  },
+  // computer-use-preview: removed, no longer returned by API (shut down 2026-07-23)
   // codex-mini-latest: removed, shut down February 12, 2026
 
 
@@ -1229,9 +1284,12 @@ const openAIModelsDenyList: string[] = [
   'gpt-realtime',
   'gpt-realtime-mini',
   'gpt-realtime-1.5',
+  'gpt-realtime-2',
+  'gpt-realtime-translate',
+  'gpt-realtime-whisper',
 
-  // [OpenAI, 2025-03-11] FIXME: NOT YET SUPPORTED - "RESPONSES API"
-  'computer-use-preview', 'computer-use-preview-2025-03-11', // FIXME: support these
+  // [OpenAI, 2025-03-11] Computer Use (Responses API) - NOT YET SUPPORTED; still returned by some accounts until shutdown 2026-07-23
+  'computer-use-preview', // single entry catches '-2025-03-11' too via includes()
 
   // [OpenAI Deprecations] Explicitly deny shut-down model IDs that we removed
   'codex-mini-latest', // shut down February 12, 2026
@@ -1256,7 +1314,7 @@ const openAIModelsDenyList: string[] = [
   'tts-1-hd', 'tts-1', 'gpt-4o-mini-tts', // FIXME: support these
 
   // STT models: /v1/audio/transcriptions, /v1/audio/translations
-  'whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe', // FIXME: support these
+  'whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'gpt-4o-transcribe-diarize', // FIXME: support these
 
   // Image-focused chat models (non-standard image output pricing)
   'gpt-5-image', 'gpt-5-image-mini',
@@ -1283,7 +1341,16 @@ export function openAIModelFilter(model: OpenAIWire_API_Models_List.Model) {
 }
 
 export function openAIModelToModelDescription(modelId: string, options?: { isNotOpenai?: boolean, modelCreated?: number, modelUpdated?: number }): ModelDescriptionSchema {
-  return fromManualMapping(_knownOpenAIChatModels, modelId, options?.modelCreated, options?.modelUpdated, llmsFallbackForOpenAIModel(modelId, !options?.isNotOpenai));
+  const md = fromManualMapping(_knownOpenAIChatModels, modelId, options?.modelCreated, options?.modelUpdated, llmsFallbackForOpenAIModel(modelId, !options?.isNotOpenai));
+
+  // pubDate fallback: surface the "new" badge for genuinely-new OpenAI models not yet catalogued editorially.
+  // Native OpenAI's 'created' is verified real per-model dates (124/124 unique, 2022-2026 spread). Gated to
+  // native OpenAI only - generic OpenAI-compatible custom hosts (isNotOpenai) have unverified 'created'.
+  // Editorial pubDate (from _knownOpenAIChatModels) always wins.
+  if (!options?.isNotOpenai && md.pubDate === undefined && md.created)
+    md.pubDate = formatPubDate(md.created);
+
+  return md;
 }
 
 export function openAIInjectVariants(acc: ModelDescriptionSchema[], model: ModelDescriptionSchema): ModelDescriptionSchema[] {
@@ -1292,6 +1359,11 @@ export function openAIInjectVariants(acc: ModelDescriptionSchema[], model: Model
 
 
 const _manualOrderingIdPrefixes = [
+  // GPT-5.6 (Sol/Terra/Luna tiers)
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.6-',
   // GPT-5.5
   'gpt-5.5-20',
   'gpt-5.5-pro-20',
@@ -1386,10 +1458,6 @@ const _manualOrderingIdPrefixes = [
   'chatgpt-',
   // Codex
   'codex-',
-  // Computer use models
-  'computer-use-20',
-  'computer-use-preview',
-  'computer-use',
   // ...rest
   // 'gpt-4-turbo-',
   // 'gpt-4-',
