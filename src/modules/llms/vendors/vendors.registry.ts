@@ -12,7 +12,9 @@ import { ModelVendorGroq } from './groq/groq.vendor';
 import { ModelVendorLMStudio } from './lmstudio/lmstudio.vendor';
 import { ModelVendorLocalAI } from './localai/localai.vendor';
 import { ModelVendorMistral } from './mistral/mistral.vendor';
+import { ModelVendorModular } from './modular/modular.vendor';
 import { ModelVendorMoonshot } from './moonshot/moonshot.vendor';
+import { ModelVendorNvidiaNIM } from './nvidianim/nvidianim.vendor';
 import { ModelVendorOllama } from './ollama/ollama.vendor';
 import { ModelVendorOpenAI } from './openai/openai.vendor';
 import { ModelVendorOpenRouter } from './openrouter/openrouter.vendor';
@@ -38,7 +40,9 @@ export type ModelVendorId =
   | 'lmstudio'
   | 'localai'
   | 'mistral'
+  | 'modular'
   | 'moonshot'
+  | 'nvidianim'
   | 'ollama'
   | 'openai'
   | 'openrouter'
@@ -63,7 +67,9 @@ const MODEL_VENDOR_REGISTRY = {
   lmstudio: ModelVendorLMStudio,
   localai: ModelVendorLocalAI,
   mistral: ModelVendorMistral,
+  modular: ModelVendorModular,
   moonshot: ModelVendorMoonshot,
+  nvidianim: ModelVendorNvidiaNIM,
   ollama: ModelVendorOllama,
   openai: ModelVendorOpenAI,
   openrouter: ModelVendorOpenRouter,

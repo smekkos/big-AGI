@@ -16,6 +16,9 @@ interface UXLabsStore {
   labsAutoHideComposer: boolean;
   setLabsAutoHideComposer: (labsAutoHideComposer: boolean) => void;
 
+  labsScreenWakeLock: boolean; // mobile: keep the screen on while generations run - default on, no UI yet
+  setLabsScreenWakeLock: (labsScreenWakeLock: boolean) => void;
+
   labsShowShortcutBar: boolean;
   setLabsShowShortcutBar: (labsShowShortcutBar: boolean) => void;
 
@@ -42,6 +45,9 @@ export const useUXLabsStore = create<UXLabsStore>()(
 
       labsAutoHideComposer: false,
       setLabsAutoHideComposer: (labsAutoHideComposer: boolean) => set({ labsAutoHideComposer }),
+
+      labsScreenWakeLock: true,
+      setLabsScreenWakeLock: (labsScreenWakeLock: boolean) => set({ labsScreenWakeLock }),
 
       labsShowShortcutBar: true,
       setLabsShowShortcutBar: (labsShowShortcutBar: boolean) => set({ labsShowShortcutBar }),
@@ -84,6 +90,10 @@ export function getLabsHighPerformance() {
 
 export function getLabsLosslessImages() {
   return useUXLabsStore.getState().labsLosslessImages;
+}
+
+export function getLabsScreenWakeLock() {
+  return useUXLabsStore.getState().labsScreenWakeLock;
 }
 
 export function getLabsAutoRefreshOpenRouter() {

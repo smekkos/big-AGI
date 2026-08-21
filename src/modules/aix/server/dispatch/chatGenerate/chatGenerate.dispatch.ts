@@ -71,7 +71,7 @@ export type ChatGenerateParticleTransformFunction = ((particle: AixWire_Particle
 /**
  * Specializes to the correct vendor a request for chat generation
  */
-export async function createChatGenerateDispatch(access: AixAPI_Access, model: AixAPI_Model, chatGenerate: AixAPIChatGenerate_Request, streaming: boolean, enableResumability: boolean): Promise<ChatGenerateDispatch> {
+export async function createChatGenerateDispatch(access: AixAPI_Access, model: AixAPI_Model, chatGenerate: AixAPIChatGenerate_Request, streaming: boolean, sessionAffinityId: string | undefined, enableResumability: boolean): Promise<ChatGenerateDispatch> {
 
   const { dialect } = access;
   switch (dialect) {
@@ -248,7 +248,9 @@ export async function createChatGenerateDispatch(access: AixAPI_Access, model: A
     case 'lmstudio':
     case 'localai':
     case 'mistral':
+    case 'modular':
     case 'moonshot':
+    case 'nvidianim':
     case 'openai':
     case 'openrouter':
     case 'perplexity':
@@ -291,7 +293,7 @@ export async function createChatGenerateDispatch(access: AixAPI_Access, model: A
       }
 
       // default: industry-standard OpenAI ChatCompletions API with per-dialect extensions
-      const chatCompletionsBody = aixToOpenAIChatCompletions(dialect, model, chatGenerate, streaming);
+      const chatCompletionsBody = aixToOpenAIChatCompletions(dialect, model, chatGenerate, streaming, sessionAffinityId);
 
       // [OpenRouter] Service-level provider routing parameter
       if (dialect === 'openrouter' && access.orRequireParameters)
@@ -368,7 +370,9 @@ export async function createChatGenerateResumeDispatch(access: AixAPI_Access, re
     case 'lmstudio':
     case 'localai':
     case 'mistral':
+    case 'modular':
     case 'moonshot':
+    case 'nvidianim':
     case 'ollama':
     case 'perplexity':
     case 'sakanaai':
